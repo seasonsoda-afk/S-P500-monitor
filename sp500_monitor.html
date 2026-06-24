@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>S&P500 200DMA モニター</title>
+<style>
+  :root{
+    --navy:#16243f; --navy2:#23365c; --ink:#1a2230; --paper:#f7f5ef;
+    --line:#d8dde6; --muted:#7a8499; --buy:#1E8449; --sell:#C0392B;
+    --hold:#E8821E; --card:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Yu Gothic","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.6; font-size:15px;
+    padding-bottom:40px}
+  .wrap{max-width:560px; margin:0 auto; padding:0 16px}
+  header{background:linear-gradient(135deg,var(--navy),var(--navy2)); color:#fff; padding:24px 0}
+  header h1{font-size:21px; font-weight:800}
+  header .sub{color:#aab6d0; font-size:13px; margin-top:2px}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:20px; margin-top:18px}
+  .card h2{font-size:13px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.06em; margin-bottom:14px; font-weight:700}
+
+  /* 判定の大きな表示 */
+  .verdict{text-align:center; padding:28px 16px; border-radius:14px; margin-top:18px}
+  .verdict.buy{background:#e8f5ee; border:2px solid var(--buy)}
+  .verdict.sell{background:#fbeae8; border:2px solid var(--sell)}
+  .verdict.hold{background:#fdf2e6; border:2px solid var(--hold)}
+  .verdict .act{font-size:32px; font-weight:800; margin-bottom:6px}
+  .verdict.buy .act{color:var(--buy)} .verdict.sell .act{color:var(--sell)} .verdict.hold .act{color:var(--hold)}
+  .verdict .desc{font-size:14px; color:var(--ink)}
+
+  .metrics{display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:18px}
+  .metric{background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px}
+  .metric .lbl{font-size:12px; color:var(--muted); margin-bottom:4px}
+  .metric .val{font-size:22px; font-weight:800}
+  .metric.wide{grid-column:1/3}
+  .pct-big{font-size:30px; font-weight:800}
+  .pct-big.above{color:var(--buy)} .pct-big.below{color:var(--sell)}
+
+  .fld{margin-bottom:14px}
+  .fld label{display:block; font-size:13px; font-weight:700; margin-bottom:5px}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  input,select{width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:8px;
+    font-size:15px; font-family:inherit}
+  .seg{display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden}
+  .seg button{flex:1; padding:9px 4px; border:none; background:#fff; font-size:14px;
+    font-family:inherit; cursor:pointer; color:var(--muted)}
+  .seg button.on{background:var(--navy); color:#fff; font-weight:700}
+  .hint{font-size:11px; color:var(--muted); margin-top:4px; line-height:1.4}
+  .btn{width:100%; padding:13px; background:var(--navy); color:#fff; border:none;
+    border-radius:9px; font-size:15px; font-weight:800; cursor:pointer; margin-top:6px;
+    font-family:inherit}
+  .btn:active{transform:translateY(1px)}
+  .btn.sub{background:#fff; color:var(--navy); border:1.5px solid var(--navy); margin-top:10px}
+  .status{font-size:12px; color:var(--muted); text-align:center; margin-top:12px; min-height:18px}
+  .err{color:var(--sell)}
+  .bar-wrap{margin-top:16px; padding:0 4px}
+  .bar-track{position:relative; height:46px; background:linear-gradient(90deg,#fbeae8 0%,#fdf2e6 35%,#fdf2e6 65%,#e8f5ee 100%);
+    border-radius:8px; border:1px solid var(--line)}
+  .bar-line{position:absolute; top:-4px; bottom:-4px; width:3px; background:var(--navy)}
+  .bar-label{position:absolute; top:50%; transform:translate(-50%,-50%); font-size:11px; color:var(--muted)}
+  .bar-zero{position:absolute; top:-4px; bottom:-4px; width:2px; background:#999; left:50%}
+  footer{text-align:center; padding:24px 0 0; color:var(--muted); font-size:11px; line-height:1.5}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>S&P500 200DMA モニター</h1>
+  <div class="sub">前日終値ベース・バンド戦略の判定ツール</div>
+</div></header>
+
+<div class="wrap">
+
+  <div id="verdictArea"></div>
+
+  <div class="metrics" id="metricsArea" style="display:none">
+    <div class="metric wide">
+      <div class="lbl">200日移動平均からの乖離</div>
+      <div class="pct-big" id="mPct">--</div>
+    </div>
+    <div class="metric"><div class="lbl">前日終値（SPY）</div><div class="val" id="mPrice">--</div></div>
+    <div class="metric"><div class="lbl">200日移動平均</div><div class="val" id="mMA">--</div></div>
+  </div>
+
+  <div class="bar-wrap" id="barArea" style="display:none">
+    <div class="bar-track" id="barTrack">
+      <div class="bar-zero"></div>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+  <button class="btn" id="refreshBtn">最新データを取得して判定</button>
+
+  <div class="card">
+    <h2>設定（自動で記憶されます）</h2>
+    <div class="fld">
+      <label>データ取得URL（GASのウェブアプリURL）</label>
+      <input type="text" id="gasUrl" placeholder="https://script.google.com/macros/s/.../exec">
+      <div class="hint">Google Apps Scriptで発行したURLを貼ってください</div>
+    </div>
+    <div class="fld">
+      <label>買いバンド（200DMAから何%上で買い）</label>
+      <input type="number" id="bandBuy" value="3" step="0.5">
+      <div class="hint">この%以上、上に離れたら「買い・保有」</div>
+    </div>
+    <div class="fld">
+      <label>売りバンド（200DMAから何%下で退避）</label>
+      <input type="number" id="bandSell" value="5" step="0.5">
+      <div class="hint">この%以上、下に離れたら「売り・退避」</div>
+    </div>
+    <div class="fld">
+      <label>現在のポジション</label>
+      <div class="seg" id="posSeg">
+        <button data-v="hold" class="on">保有中</button>
+        <button data-v="cash">退避中</button>
+      </div>
+      <div class="hint">中間帯のときは、この状態を維持します。売買したら更新してください</div>
+    </div>
+    <button class="btn sub" id="saveBtn">設定を保存</button>
+  </div>
+
+  <footer>
+    SPYの前日終値をもとに計算しています。判定はバンド戦略の目安であり、投資助言ではありません。<br>
+    データはStooqから取得。設定はこのブラウザに保存されます。
+  </footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const LS_KEY = 'sp500_200dma_monitor_v2';
+
+// ---- 設定の保存・読み込み（localStorage）----
+function loadSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_KEY));
+    if(s){
+      $('gasUrl').value = s.gasUrl ?? '';
+      $('bandBuy').value = s.bandBuy ?? 3;
+      $('bandSell').value = s.bandSell ?? 5;
+      setPos(s.pos ?? 'hold');
+      return s;
+    }
+  }catch(e){}
+  setPos('hold');
+  return null;
+}
+function saveSettings(){
+  const s = {gasUrl:$('gasUrl').value.trim(), bandBuy:+$('bandBuy').value,
+    bandSell:+$('bandSell').value, pos:curPos};
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(s)); }catch(e){}
+}
+let curPos = 'hold';
+function setPos(v){
+  curPos = v;
+  $('posSeg').querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.v===v));
+}
+$('posSeg').querySelectorAll('button').forEach(b=>{
+  b.onclick = ()=>{ setPos(b.dataset.v); saveSettings(); };
+});
+$('saveBtn').onclick = ()=>{ saveSettings(); setStatus('設定を保存しました'); };
+
+function setStatus(msg, isErr){
+  const el=$('status'); el.textContent=msg; el.className='status'+(isErr?' err':'');
+}
+
+// ---- データ取得（GAS経由）----
+async function fetchSPY(){
+  const gasUrl = $('gasUrl').value.trim();
+  if(!gasUrl){
+    throw new Error('GASのURLを設定欄に入力してください');
+  }
+  const res = await fetch(gasUrl);
+  if(!res.ok) throw new Error('GASへの接続に失敗しました（HTTP '+res.status+'）');
+  const data = await res.json();
+  if(!data.ok) throw new Error('データ取得エラー: '+(data.error||'不明なエラー'));
+  if(!data.rows || data.rows.length < 200) throw new Error('取得データが不足しています');
+  return data.rows;
+}
+
+// ---- 判定 ----
+function judge(rows){
+  const last = rows[rows.length-1];
+  const price = last.close;
+  const last200 = rows.slice(-200);
+  const ma = last200.reduce((s,r)=>s+r.close,0)/last200.length;
+  const pctDiff = (price/ma - 1)*100;
+
+  const bandBuy = +$('bandBuy').value;
+  const bandSell = +$('bandSell').value;
+
+  let newPos = curPos;
+  if(pctDiff >= bandBuy){ newPos='hold'; }
+  else if(pctDiff <= -bandSell){ newPos='cash'; }
+
+  let act, cls, desc;
+  if(pctDiff >= bandBuy && curPos==='cash'){
+    act='買い'; cls='buy'; desc='買いバンドを上抜けています。保有に切り替えるタイミングです。';
+  }else if(pctDiff <= -bandSell && curPos==='hold'){
+    act='売り・退避'; cls='sell'; desc='売りバンドを下抜けています。退避するタイミングです。';
+  }else if(newPos==='hold'){
+    act='保有を継続'; cls='buy'; desc='保有を続ける局面です。'+(pctDiff<bandBuy?'（中間帯のため現状維持）':'');
+  }else{
+    act='退避を継続'; cls='sell'; desc='退避を続ける局面です。'+(pctDiff>-bandSell?'（中間帯のため現状維持）':'');
+  }
+
+  return {price, ma, pctDiff, act, cls, desc, newPos, lastDate:last.date, bandBuy, bandSell};
+}
+
+function render(r){
+  $('verdictArea').innerHTML =
+    `<div class="verdict ${r.cls}"><div class="act">${r.act}</div><div class="desc">${r.desc}</div></div>`;
+  $('metricsArea').style.display='grid';
+  $('barArea').style.display='block';
+  const pe=$('mPct');
+  pe.textContent = (r.pctDiff>=0?'+':'')+r.pctDiff.toFixed(2)+'%';
+  pe.className = 'pct-big '+(r.pctDiff>=0?'above':'below');
+  $('mPrice').textContent = '$'+r.price.toFixed(2);
+  $('mMA').textContent = '$'+r.ma.toFixed(2);
+
+  const track=$('barTrack');
+  track.querySelectorAll('.bar-line,.bar-label').forEach(e=>e.remove());
+  const range=10;
+  const toX=p=>Math.max(0,Math.min(100,(p+range)/(range*2)*100));
+  [['+'+r.bandBuy+'%',r.bandBuy],['-'+r.bandSell+'%',-r.bandSell]].forEach(([lbl,p])=>{
+    const ln=document.createElement('div'); ln.className='bar-line';
+    ln.style.left=toX(p)+'%'; ln.style.background='#bbb'; track.appendChild(ln);
+  });
+  const cur=document.createElement('div'); cur.className='bar-line';
+  cur.style.left=toX(r.pctDiff)+'%'; track.appendChild(cur);
+  const cl=document.createElement('div'); cl.className='bar-label';
+  cl.style.left=toX(r.pctDiff)+'%'; cl.style.top='-18px';
+  cl.textContent='現在'; track.appendChild(cl);
+
+  setStatus('前日終値（'+r.lastDate+'）で計算しました');
+}
+
+$('refreshBtn').onclick = async ()=>{
+  setStatus('データ取得中...');
+  $('refreshBtn').disabled=true;
+  try{
+    const rows = await fetchSPY();
+    const r = judge(rows);
+    render(r);
+    if(r.newPos!==curPos){ setPos(r.newPos); }
+    saveSettings();
+  }catch(e){
+    setStatus(e.message||'エラーが発生しました', true);
+  }finally{
+    $('refreshBtn').disabled=false;
+  }
+};
+
+// 初期化
+loadSettings();
+setStatus('GASのURLを設定し、「最新データを取得して判定」を押してください');
+
+</script>
+</body>
+</html>
